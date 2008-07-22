@@ -26,6 +26,7 @@
      </classpath>
     </javac>
     <copy todir="${bin}">
+      <fileset dir="${src}"/>
       <fileset dir="${res}"/>
     </copy>
   </target>
