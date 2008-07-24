@@ -17,8 +17,6 @@
 package com.medallia.spider;
 
 import java.io.IOException;
-import java.io.InputStream;
-import java.io.OutputStream;
 import java.io.OutputStreamWriter;
 import java.io.PrintWriter;
 import java.io.Writer;
@@ -43,6 +41,8 @@ import org.antlr.stringtemplate.StringTemplateWriter;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 
+import com.medallia.spider.StaticResources.StaticResource;
+import com.medallia.spider.StaticResources.StaticResourceLookup;
 import com.medallia.spider.Task.CustomPostAction;
 import com.medallia.spider.api.StRenderable;
 import com.medallia.spider.api.StRenderer;
@@ -177,10 +177,16 @@ import com.medallia.tiny.web.HttpHeaders;
 public abstract class SpiderServlet extends HttpServlet {
 	private static Log log;
 	
+	private final StaticResourceLookup staticResourceLookup;
 	private final StringTemplateGroup pageStGroup;
+	
+	/** map from name of a StTool to an instance of it */
+	private final Map<String, StTool> stTools;
 	
 	/** constructor that creates the initial state */
 	public SpiderServlet() {
+		staticResourceLookup = StaticResources.makeStaticResourceLookup(getClass());
+		stTools = buildStToolsMap();
 		pageStGroup = new StringTemplateGroup("mygroup") {
 			@Override public String getFileNameFromTemplateName(String name) {
 				return super.getFileNameFromTemplateName(findPathForTemplate(name));
@@ -333,67 +339,28 @@ public abstract class SpiderServlet extends HttpServlet {
 			throw new RuntimeException("EmbeddedRenderTask returned unsupported PostAction " + po);
 	}
 
-	/** map from URI ending to resource path, i.e. package name. */
-	private static final Map<String, String> resourceMap = Empty.hashMap();
-	static {
-		addResourceMapping("images", "gif", "jpg", "png");
-		addResourceMapping("css", "css");
-	}
-	private static void addResourceMapping(String path, String... ending) {
-		for (String s : ending) {
-			String old = resourceMap.put(s, path);
-			if (old != null)
-				throw new AssertionError(s + " alreadys maps to " + old);
-		}
-	}
 	
 	private final Date boot = Clock.now();
 	
 	/** serve static resources, e.g. images and css that do not have any dynamic component */
-	private boolean serveStatic(String uri, HttpServletResponse res) {
-		int k = uri.lastIndexOf('.');
-		if (k > 0) {
-			int m = uri.lastIndexOf('/');
-			if (m >= 0) {
-				String ext = uri.substring(k+1);
-				String path = resourceMap.get(ext);
-				if (path != null) {
-					String name = uri.substring(m, uri.length());
-					InputStream in = getClass().getResourceAsStream(path + name);
-					if (in != null) {
-						try {
-							String mimeType = MimeType.getMimeTypeForExtension(ext);
-							if (mimeType != null) res.setHeader("Content-Type", mimeType);
-							res.setDateHeader("Date", boot.getTime());				
-							HttpHeaders.addCacheForeverHeaders(res);
-							
-							copy(in, res.getOutputStream());
-						} catch (IOException ex) {
-							log.warn("Failed to serve resource " + path + name, ex);
-						}
-					} else {
-						// TODO: Send error image / file here
-						log.warn("Resource not found: " + name);
-					}
-					return true;
-				}
+	private boolean serveStatic(String uri, HttpServletResponse res) throws IOException {
+		StaticResource staticResource = staticResourceLookup.findStaticResource(uri);
+		if (staticResource != null) {
+			if (staticResource.exists()) {
+				String mimeType = MimeType.getMimeTypeForExtension(staticResource.getMimeType());
+				if (mimeType != null)
+					res.setHeader("Content-Type", mimeType);
+				res.setDateHeader("Date", boot.getTime());				
+				HttpHeaders.addCacheForeverHeaders(res);
+				staticResource.copyTo(res.getOutputStream());
+			} else {
+				res.sendError(404);
+				log.warn("Requested resource not found: " + uri);
 			}
+			return true;
+		} else {
+			return false;
 		}
-		return false;
-	}
-	
-	private static final int COPY_BUFFER_SIZE = 1024 * 4;
-	
-	/** Copy input to output; neither stream is closed */
-	public static int copy(InputStream input, OutputStream output) throws IOException {
-		byte[] buffer = new byte[COPY_BUFFER_SIZE];
-		int count = 0;
-		int n = 0;
-		while (-1 != (n = input.read(buffer))) {
-			output.write(buffer, 0, n);
-			count += n;
-		}
-		return count;
 	}
 	
 	private final String taskPackage = findTaskPackage(getClass());
@@ -456,11 +423,11 @@ public abstract class SpiderServlet extends HttpServlet {
 		}
 		return null;
 	}
-
-	/** map from name of a StTool to an instance of it */
-	private static Map<String, StTool> stTools = Empty.hashMap();
-	static {
-		stTools.put("cached", new CachedTool());
+	
+	private Map<String, StTool> buildStToolsMap() {
+		Map<String, StTool> m = Empty.hashMap();
+		m.put("cached", new CachedTool(staticResourceLookup));
+		return m;
 	}
 
 	/** @return the StTool for the given name */

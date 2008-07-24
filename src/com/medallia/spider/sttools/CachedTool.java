@@ -16,8 +16,14 @@
  */
 package com.medallia.spider.sttools;
 
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
+
 import org.antlr.stringtemplate.StringTemplate;
 
+import com.medallia.spider.StaticResources.StaticResource;
+import com.medallia.spider.StaticResources.StaticResourceLookup;
+import com.medallia.tiny.Encoding;
 import com.medallia.tiny.Implement;
 import com.medallia.tiny.string.HtmlString;
 
@@ -31,13 +37,35 @@ import com.medallia.tiny.string.HtmlString;
  *
  */
 public class CachedTool implements StTool {
+	
+	private final StaticResourceLookup srl;
+	
+	public CachedTool(StaticResourceLookup srl) {
+		this.srl = srl;
+	}
 
 	@Implement public HtmlString render(StringTemplate st) {
-		// XXX: Implement
-		String r = String.valueOf(st.getAttribute("it"));
-		@SuppressWarnings("deprecation")
-		HtmlString html = HtmlString.rawUnsafe(r);
-		return html;
+		String resourceName = String.valueOf(st.getAttribute("it"));
+		StaticResource sr = srl.findStaticResource(resourceName);
+		
+		if (sr != null) {
+			// copy into buffer and calculate md5
+			ByteArrayOutputStream buffer = new ByteArrayOutputStream();
+			try {
+				sr.copyTo(buffer);
+			} catch (IOException e) {
+				throw new RuntimeException(e);
+			}
+			
+			// create and return link
+			String md5 = Encoding.md5(buffer.toByteArray());
+			
+			@SuppressWarnings("deprecation")
+			HtmlString html = HtmlString.rawUnsafe(resourceName + "?" + md5);
+			return html;
+		}
+		
+		throw new RuntimeException("Resource not found: " + resourceName);
 	}
 
 }
