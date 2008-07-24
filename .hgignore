@@ -1,0 +1,11 @@
+syntax: glob
+bin
+dist
+docs
+
+# Eclipse
+.classpath
+.project
+.settings
+res/user.gen
+.DS_Store
