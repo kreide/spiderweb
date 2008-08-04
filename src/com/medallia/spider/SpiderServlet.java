@@ -47,6 +47,7 @@ import com.medallia.spider.Task.CustomPostAction;
 import com.medallia.spider.api.StRenderable;
 import com.medallia.spider.api.StRenderer;
 import com.medallia.spider.api.StRenderable.PostAction;
+import com.medallia.spider.api.StRenderer.InputArgParser;
 import com.medallia.spider.api.StRenderer.StRenderPostAction;
 import com.medallia.spider.sttools.CachedTool;
 import com.medallia.spider.sttools.StTool;
@@ -219,7 +220,7 @@ public abstract class SpiderServlet extends HttpServlet {
 	protected void registerObjects(ObjectProvider injector) { }
 
 	/** Register any custom request parameter parsers. The method
-	 * {@link StRenderer#registerArgParser(Class, spider.api.StRenderer.InputArgParser)
+	 * {@link StRenderer#registerArgParser(Class, InputArgParser)
 	 * should be used for this.
 	 */
 	protected void registerInputArgParser(StRenderer renderer) { }

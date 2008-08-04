@@ -18,8 +18,6 @@ package com.medallia.spider.api;
 
 import java.io.IOException;
 import java.lang.annotation.Annotation;
-import java.lang.reflect.AnnotatedElement;
-import java.lang.reflect.Array;
 import java.lang.reflect.Field;
 import java.lang.reflect.InvocationHandler;
 import java.lang.reflect.Method;
@@ -48,7 +46,6 @@ import com.medallia.spider.sttools.StTool;
 import com.medallia.tiny.CollUtils;
 import com.medallia.tiny.Empty;
 import com.medallia.tiny.ObjectProvider;
-import com.medallia.tiny.Strings;
 import com.medallia.tiny.string.ExplodingStringTemplateErrorListener;
 import com.medallia.tiny.string.HtmlString;
 import com.medallia.tiny.string.JsString;
@@ -168,11 +165,15 @@ public abstract class StRenderer {
 	}
 	
 	private PostAction invokeAction(ObjectProvider injector, Map<String, String[]> inputParams) {
+		DynamicInputImpl dynamicInput = new DynamicInputImpl(inputParams, inputArgParsers);
+		injector = injector.copyWith(dynamicInput).errorOnUnknownType();
+		
 		Method am = findActionMethod(renderable.getClass());
 		Class<Input> inputInterface = findInterfaceWithAnnotation(INPUT_ANNOTATION_MAP, renderable.getClass(), Input.class);
 		if (inputInterface != null) {
-			injector = injector.copyWith(createInput(inputInterface, inputParams)).errorOnUnknownType();
+			injector.register(createInput(inputInterface, dynamicInput));
 		}
+		
 		Object[] args = injector.makeArgsFor(am);
 		try {
 			return (PostAction) am.invoke(renderable, args);
@@ -189,88 +190,14 @@ public abstract class StRenderer {
 	
 	private final Map<Class<?>, InputArgParser<?>> inputArgParsers = Empty.hashMap();
 
-	private Object createInput(Class<?> x, final Map<String, String[]> m) {
+	private Object createInput(Class<?> x, final DynamicInputImpl dynamicInput) {
 		return Proxy.newProxyInstance(x.getClassLoader(), new Class<?>[] { x }, 
-				new InvocationHandler() {
-					public Object invoke(Object proxy, Method method, Object[] args) throws Throwable {
-						Class<?> rt = method.getReturnType();
-						String k = method.getName();
-						
-						if (rt.isArray() && method.isAnnotationPresent(Input.MultiValued.class)) {
-							// return type is an array; grab all
-							Object o = m.get(k);
-							return parseMultiValue(rt, o, method);
-						}
-						
-						String v = Strings.extract(m.get(k));
-						
-						// boolean is used for checkboxes, and false is encoded as a missing value
-						if (rt == Boolean.class || rt == Boolean.TYPE) {
-							return v != null;
-						}
-						
-						// the remaining types have proper null values
-						if (v == null) return null;
-						
-						return parseSingleValue(rt, v, method);
-					}
-
-					/**
-					 * @param rt some kind of array class
-					 * @param data null, String or String[]
-					 * @return parsed data as per parseSingleValue
-					 * @throws AssertionError if parseSingleValue does
-					 */
-					private Object parseMultiValue(Class<?> rt, Object data, AnnotatedElement anno) throws AssertionError {
-						String[] xs;
-						// normalize the zero-and-one cases
-						if (data == null) {
-							xs = new String[0];
-						} else if (data instanceof String[]) {
-							xs = (String[]) data;
-						} else {
-							xs = new String[] { data.toString() };
-						}
-						
-						Class<?> comp = rt.getComponentType();
-						Object arr = Array.newInstance(rt.getComponentType(), xs.length);
-						for (int i=0; i < xs.length; i++) {
-							Array.set(arr, i, parseSingleValue(comp, xs[i], anno));
-						}
-						return arr;
-					}
-
-					private Object parseSingleValue(Class<?> rt, String v, AnnotatedElement anno) throws AssertionError {
-						if (rt.isEnum()) {
-							String vlow = v.toLowerCase();
-							for (Enum e : rt.asSubclass(Enum.class).getEnumConstants()) {
-								if (e.name().toLowerCase().equals(vlow)) return e;
-							}
-							throw new AssertionError("Enum constant not found: " + v);
-						} else if (rt == Integer.class || rt == Integer.TYPE) {
-							return Integer.valueOf(v);
-						} else if (rt == String.class) {
-							return v;
-						} else if (rt.isArray()) {
-							Input.List ann = anno.getAnnotation(Input.List.class);
-							if (ann == null) throw new AssertionError("Array type but no annotation (see "+Input.class+"): "+anno);
-							String separator = ann.separator();
-							String[] strVals = v.split(separator, -1);
-							Class<?> arrayType = rt.getComponentType();
-							Object a = Array.newInstance(arrayType, strVals.length);
-							for (int i = 0; i < strVals.length; i++) {
-								Array.set(a, i, parseSingleValue(arrayType, strVals[i], anno));
-							}
-							return a;
-						} else {
-							InputArgParser<?> argParser = inputArgParsers.get(rt);
-							if (argParser != null) {
-								return argParser.parse(v);
-							}
-						}
-						throw new AssertionError("Unknown return type " + rt + " (val: " + v + ")");
-					}
-				});
+			new InvocationHandler() {
+				public Object invoke(Object proxy, Method method, Object[] args) throws Throwable {
+					return dynamicInput.getInput(method.getName(), method.getReturnType(), method);
+				}
+			}
+		);
 	}
 	
 	/** register the given {@link InputArgParser} */

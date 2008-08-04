@@ -61,6 +61,9 @@ import com.medallia.spider.Task;
  * types can be registered via {@link StRenderer#registerArgParser(Class, spider.api.StRenderer.InputArgParser)}.
  * <p>
  * 
+ * Dynamic forms are also supported; see {@link DynamicInput}. This object is also dependency injected.
+ * <p>
+ * 
  * The return type of the action method can be either void or a PostAction. If void the default
  * PostAction will be assumed, which is to render a StringTemplate; see {@link StRenderer#defaultPostAction()}.
  * <p>
@@ -104,6 +107,20 @@ public interface StRenderable {
 	@Retention(RetentionPolicy.RUNTIME)
 	@interface Output {
 		
+	}
+	
+	/** Object used to dynamically retrieve input variables; this is needed for dynamically
+	 * generated forms where the number of input elements is not known at compile time.
+	 */
+	interface DynamicInput {
+		/**
+		 * Dynamic version of the methods declared in {@link Input}.
+		 * 
+		 * @param name name of the input variable, which is the same as the method name would have been
+		 * @param type type of the object the value is to be parsed into; the same as the return type of the method
+		 * @return the parsed value
+		 */
+		<X> X getInput(String name, Class<X> type);
 	}
 	
 	/** TypeTag Interface to be used in the Output interface

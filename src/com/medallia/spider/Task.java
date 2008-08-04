@@ -37,10 +37,9 @@ import com.medallia.tiny.Implement;
 public abstract class Task implements ITask {
 	
 	/** @return a PostAction pointing at the given template, which will be used for rendering instead of the default */
-	public static StTemplatePostAction template(String templateName) {
-		final String tn = "pages/" + templateName;
+	public static StTemplatePostAction template(final String templateName) {
 		return new StTemplatePostAction() {
-			public String templateName() { return tn; }
+			public String templateName() { return templateName; }
 		};
 	}
 	
