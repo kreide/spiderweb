@@ -26,6 +26,7 @@ public class StaticResources {
 	static {
 		addResourceMapping("images", "gif", "jpg", "png");
 		addResourceMapping("css", "css");
+		addResourceMapping("js", "js");
 	}
 	private static void addResourceMapping(String path, String... ending) {
 		for (String s : ending) {
@@ -43,9 +44,8 @@ public class StaticResources {
 					final String ext = uri.substring(k + 1);
 					String path = resourceMap.get(ext);
 
-					// do not allow extra path names in the resource path
-					int lastSlashIndex = uri.lastIndexOf('/');
-					String resourceName = uri.substring(lastSlashIndex < 0  ? 0 : lastSlashIndex + 1, uri.length());
+					int slashIndex = uri.indexOf('/');
+					String resourceName = uri.substring(slashIndex < 0  ? 0 : slashIndex + 1, uri.length());
 					final InputStream in = path != null ? clazz.getResourceAsStream(path + "/" + resourceName) : null;
 					
 					return new StaticResource() {
