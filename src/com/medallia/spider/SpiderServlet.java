@@ -54,7 +54,6 @@ import com.medallia.spider.sttools.StTool;
 import com.medallia.spider.test.RenderTaskTestCase;
 import com.medallia.tiny.Clock;
 import com.medallia.tiny.Empty;
-import com.medallia.tiny.MimeType;
 import com.medallia.tiny.ObjectProvider;
 import com.medallia.tiny.Strings;
 import com.medallia.tiny.string.ExplodingStringTemplateErrorListener;
@@ -348,9 +347,7 @@ public abstract class SpiderServlet extends HttpServlet {
 		StaticResource staticResource = staticResourceLookup.findStaticResource(uri);
 		if (staticResource != null) {
 			if (staticResource.exists()) {
-				String mimeType = MimeType.getMimeTypeForExtension(staticResource.getMimeType());
-				if (mimeType != null)
-					res.setHeader("Content-Type", mimeType);
+				res.setHeader("Content-Type", staticResource.getMimeType());
 				res.setDateHeader("Date", boot.getTime());				
 				HttpHeaders.addCacheForeverHeaders(res);
 				staticResource.copyTo(res.getOutputStream());
