@@ -80,60 +80,6 @@ public class Encoding {
 		return a;
 	}
 	
-	/**
-	 * Calculate a CRC8 checksum (generator is x^8 + x^2 + x + 1)
-	 *
-	 * This method takes a byte array terminated by a null byte and returns the
-	 * checksum of the array.
-	 *
-	 * Coded fetched from here:
-	 *
-	 * http://www.roch.edu/faculty/clin/cs412/Project/CRC8.java
-	 * 
-	 * XXX: we have no license for this code
-	 * 
-	 * @return a crc8 checksum for data
-	 */
-	public static byte crc8(byte[] data)   {
-		short register = 0;
-		short bitMask = 0;
-		short poly = 0;
-		register = data[0];
-
-		for (int i = 1; i < data.length; i++)  {
-			register = (short)((register << 8) | (data[i] & 0x00ff));
-			poly = (short)(0x0107 << 7);
-			bitMask = (short)0x8000;
-
-			while (bitMask != 0x0080)  {
-				if ((register & bitMask) != 0) {
-					register ^= poly;
-				}
-				poly = (short) ((poly & 0x0000ffff) >>> 1);
-				bitMask = (short)((bitMask & 0x0000ffff) >>> 1);
-			}  // end while
-		}  // end for
-		return (byte)register;
-	}
-	
-	/**
-	 * Hash function for integers meant for avoiding collisions
-	 * in hash tables. Taken from the HashMap Java implementation,
-	 * newHash(int) method.
-	 * 
-	 * Note: do not sum the values returned from this function since it is common
-	 * that hash(A) + hash(B) == hash(A + 1) + hash(B + 1).
-	 * 
-	 * @return an integer hash
-	 */
-	public static int hash(int h) {
-		// This function ensures that hashCodes that differ only by
-		// constant multiples at each bit position have a bounded
-		// number of collisions (approximately 8 at default load factor).
-		h ^= (h >>> 20) ^ (h >>> 12);
-		return h ^ (h >>> 7) ^ (h >>> 4);
-	}
-
 	public static final String CHARSET_UTF8_NAME = "utf-8";
 	public static final Charset CHARSET_UTF8 = Charset.forName(CHARSET_UTF8_NAME);
 	

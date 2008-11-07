@@ -138,13 +138,6 @@ public class Clock {
 		return c.getTime();
 	}
 
-	// WTF is this doing here??
-	// XXX: Assumes US locale
-	public static String getExampleDate() {
-		return "12/14/2005";
-	}
-
-	
 	public static class ClockTest extends TestCase {
 		public void testDaysSinceEpoch() throws Exception {
 			DateFormat dateTimeFormat = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
