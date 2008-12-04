@@ -19,7 +19,9 @@ package	 com.medallia.tiny;
 import java.lang.annotation.Annotation;
 import java.lang.reflect.Constructor;
 import java.lang.reflect.Method;
+import java.lang.reflect.ParameterizedType;
 import java.lang.reflect.Proxy;
+import java.lang.reflect.Type;
 import java.util.Arrays;
 import java.util.Map;
 
@@ -123,16 +125,52 @@ public class ObjectProvider {
 		map.put(c, o);
 		return this;
 	}
+	
+	/** Object that can produce another object */
+	public interface ObjectFactory<X> {
+		/** @return the produced object */
+		X make();
+	}
+
+	/**
+	 * Register a factory object; if this ObjectProvider is asked to
+	 * provide the type of object the factory produces it will
+	 * call {@link ObjectFactory#make()} to obtain the object.
+	 */
+	public <X> ObjectProvider registerFactory(ObjectFactory<X> of) {
+		for (Type t : of.getClass().getGenericInterfaces()) {
+			if (t instanceof ParameterizedType) {
+				ParameterizedType pt = (ParameterizedType) t;
+				if (pt.getRawType().equals(ObjectFactory.class)) {
+					@SuppressWarnings("unchecked")
+					Class<X> x = (Class<X>) pt.getActualTypeArguments()[0];
+					registerFactory(x, of);
+					break;
+				}
+			}
+		}
+		return this;
+	}
+
+	/** Same as {@link #registerFactory(ObjectFactory)}, but give the type of the produced
+	 * objects explicitly.
+	 */
+	public <X> ObjectProvider registerFactory(Class<X> c, ObjectFactory<X> of) {
+		map.put(c, of);
+		return this;
+	}
+	
 	/**
 	 * @return an object of type c, or null if none are registered with this ObjectProvider
 	 */
 	@SuppressWarnings("unchecked")
 	public <X> X get(Class<X> c) {
-		if (map.containsKey(c)) return (X)map.get(c); //c.cast(e.value()) will fail if c.isPrimitive()
+		if (map.containsKey(c)) return (X) toValue(map.get(c)); //c.cast(e.value()) will fail if c.isPrimitive()
 		for (Map.Entry<Class<?>, Object> e : map.entrySet()) {
 			if (c.isAssignableFrom(e.getKey())) {
-				LOG.debug("Returning "  + e.getValue() + " with key " + e.getKey() + " for " + c);
-				return (X)e.getValue();
+				Object v = toValue(e.getValue());
+				LOG.debug("Returning "  + v + " with key " + e.getKey() + " for " + c);
+				return (X) v;
 			}
 		}
 		String msg = "No object registred for " + c + " in " + this;
@@ -143,6 +181,14 @@ public class ObjectProvider {
 			return null;
 		}
 	}
+	
+	private Object toValue(Object obj) {
+		if (obj instanceof ObjectFactory) {
+			obj = ((ObjectFactory)obj).make();
+		}
+		return obj;
+	}
+
 	/**
 	 * @return True if an object of type c is registered with this ObjectProvider, false otherwise
 	 */

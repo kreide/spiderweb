@@ -97,6 +97,11 @@ public abstract class StRenderTestCase<X extends StRenderable> extends TestCaseW
 			@Override public HttpSession getSession(boolean create) { return getSession(); }
 			@Override public Object getAttribute(String name) { return null; }
 			@Override public Enumeration getAttributeNames() { return Collections.enumeration(Collections.emptySet()); }
+			@Override public String getHeader(String name) {
+				if ("Referer".equals(name))
+					return "http://" + renderableClass.getName() + "-test";
+				return super.getHeader(name);
+			}
 		};
 		
 		final ByteArrayOutputStream w = new ByteArrayOutputStream();
@@ -121,8 +126,7 @@ public abstract class StRenderTestCase<X extends StRenderable> extends TestCaseW
 			@Override public boolean isCommitted() { return false; }
 		};
 		
-		ServletMock servlet = getServletMock(renderableClass);
-		servlet.service(request, response);
+		servletMock.service(request, response);
 		
 		return new StRenderResult() {
 			public boolean isRedirect() { return getRedirect() != null; }
@@ -150,10 +154,22 @@ public abstract class StRenderTestCase<X extends StRenderable> extends TestCaseW
 	public interface ServletMock {
 		/** called with mock request and response objects */
 		void service(HttpServletRequest req, HttpServletResponse res) throws Exception;
+		/** release any allocated resources */
+		void destroy();
 	}
-
+	
+	private ServletMock servletMock;
+	
+	@Override protected void safeUp() throws Exception {
+		this.servletMock = getServletMock();
+	}
+	@Override protected void safeDown() throws Exception {
+		this.servletMock.destroy();
+		this.servletMock = null;
+	}
+	
 	/** @return ServletMock that will be used in the test */
-	protected abstract ServletMock getServletMock(Class<? extends X> renderableClass) throws Exception;
+	protected abstract ServletMock getServletMock() throws Exception;
 	
 	/** @return the URI that maps to the given class */
 	protected abstract String uriForTask(Class<? extends X> ct);

@@ -96,7 +96,7 @@ public interface Fixture {
 		
 		/** call {@link #down()} on the wrapped {@link Fixture} objects */
 		@Implement public void down() throws Exception {
-			if (n == 0) throw new AssertionError(this + " not up-ed");
+			if (n == 0 && !fixtures.isEmpty()) throw new AssertionError(this + " not up-ed");
 			Throwable firstFailure = null;
 			while (n-- > 0) {
 				try {

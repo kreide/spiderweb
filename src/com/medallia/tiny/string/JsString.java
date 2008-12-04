@@ -133,6 +133,10 @@ public class JsString extends StringBase {
 	@Implement public JsString subSequence(int arg0, int arg1) {
 		return new JsString(s.substring(arg0,arg1));
 	}
+	
+	public String asString() {
+		return s;
+	}
 
 	private String getRawJs() { return s; }
 

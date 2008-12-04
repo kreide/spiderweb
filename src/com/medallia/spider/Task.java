@@ -18,6 +18,7 @@ package com.medallia.spider;
 
 import java.io.IOException;
 import java.io.OutputStream;
+import java.net.URL;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.Map;
@@ -28,6 +29,7 @@ import javax.servlet.http.HttpServletResponse;
 import com.medallia.spider.api.StRenderable;
 import com.medallia.tiny.CollUtils;
 import com.medallia.tiny.Empty;
+import com.medallia.tiny.Encoding;
 import com.medallia.tiny.Implement;
 
 /**
@@ -42,7 +44,17 @@ public abstract class Task implements ITask {
 			public String templateName() { return templateName; }
 		};
 	}
-	
+
+	/** @return a PostAction which sends the given string, as UTF-8; no template is used */
+	public static PostAction rawStringUtf8(final String str) {
+		return new BinaryDataPostAction() {
+			@Override protected String getContentType() { return "text/plain"; }
+			@Override protected void writeTo(OutputStream out) throws IOException {
+				out.write(Encoding.getUTF8Bytes(str));
+			}
+		};
+	}
+
 	/** @return a PostAction which redirects to the HTTP referer, i.e. the action the client came from */
 	public static PostAction redirectToReferer() {
 		return new CustomPostAction() {
@@ -50,6 +62,32 @@ public abstract class Task implements ITask {
 				res.sendRedirect(req.getHeader("Referer"));
 			}
 		};
+	}
+	
+	/** @return a PostAction which redirects to given task without any query parameters */
+	public static PostAction redirectToTask(final Class<? extends IRenderTask> ct) {
+		return redirectToTask(ct, null);
+	}
+	/** @return a PostAction which redirects to given task with the given query string */
+	public static PostAction redirectToTask(final Class<? extends IRenderTask> ct, final String qs) {
+		return new CustomPostAction() {
+			public void respond(HttpServletRequest req, HttpServletResponse res) throws IOException {
+				URL url = new URL(req.getRequestURL().toString());
+				String path = url.getPath();
+				String uri = path.substring(0, path.lastIndexOf('/') + 1) + uriNameForTask(ct);
+				if (qs != null)
+					uri += "?" + qs;
+				url = new URL(url.getProtocol(), url.getHost(), url.getPort(), uri);
+				res.sendRedirect(url.toExternalForm());
+			}
+		};
+	}
+	
+	/** @return the URI name that maps to the given class, e.g. 'foo' for FooTask */
+	public static String uriNameForTask(Class<? extends IRenderTask> ct) {
+		String sn = ct.getSimpleName();
+		sn = sn.substring(0, sn.length()-4);
+		return sn.substring(0, 1).toLowerCase() + sn.substring(1);
 	}
 
 	/** Forwards to {@link V#v()} for convenience; see {@link StRenderable} for doc. */
@@ -79,6 +117,10 @@ public abstract class Task implements ITask {
 		@SuppressWarnings("unchecked")
 		X x = (X) attrs.get(tag);
 		return x;
+	}
+	
+	@Implement public boolean hasAttr(V<?> tag) {
+		return attrs.containsKey(tag);
 	}
 	
 	/** PostAction that does some custom processing */

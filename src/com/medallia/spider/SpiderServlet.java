@@ -19,9 +19,10 @@ package com.medallia.spider;
 import java.io.IOException;
 import java.io.OutputStreamWriter;
 import java.io.PrintWriter;
+import java.io.StringReader;
+import java.io.StringWriter;
 import java.io.Writer;
 import java.lang.reflect.Constructor;
-import java.util.Arrays;
 import java.util.Date;
 import java.util.List;
 import java.util.Map;
@@ -30,6 +31,7 @@ import java.util.regex.Pattern;
 
 import javax.servlet.ServletConfig;
 import javax.servlet.ServletException;
+import javax.servlet.http.Cookie;
 import javax.servlet.http.HttpServlet;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
@@ -41,6 +43,7 @@ import org.antlr.stringtemplate.StringTemplateWriter;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 
+import com.medallia.spider.MethodInvoker.LifecycleHandlerSet;
 import com.medallia.spider.StaticResources.StaticResource;
 import com.medallia.spider.StaticResources.StaticResourceLookup;
 import com.medallia.spider.Task.CustomPostAction;
@@ -54,6 +57,7 @@ import com.medallia.spider.sttools.StTool;
 import com.medallia.spider.test.RenderTaskTestCase;
 import com.medallia.tiny.Clock;
 import com.medallia.tiny.Empty;
+import com.medallia.tiny.Implement;
 import com.medallia.tiny.ObjectProvider;
 import com.medallia.tiny.Strings;
 import com.medallia.tiny.string.ExplodingStringTemplateErrorListener;
@@ -191,10 +195,10 @@ public abstract class SpiderServlet extends HttpServlet {
 			@Override public String getFileNameFromTemplateName(String name) {
 				return super.getFileNameFromTemplateName(findPathForTemplate(name));
 			}
-			public StringTemplate getEmbeddedInstanceOf(StringTemplate enclosingInstance, String name) throws IllegalArgumentException {
+			@Override public StringTemplate getEmbeddedInstanceOf(StringTemplate enclosingInstance, String name) throws IllegalArgumentException {
 				final StTool t = getStTool(name);
 				if (t != null) return new StringTemplate() {
-					public int write(StringTemplateWriter out) throws IOException {
+					@Override public int write(StringTemplateWriter out) throws IOException {
 						String s = t.render(this).toString();
 						out.write(s);
 						return s.length();
@@ -212,11 +216,31 @@ public abstract class SpiderServlet extends HttpServlet {
 	 * a valid task name, e.g. 'foo' (assuming there is a FooTask).
 	 */
 	protected abstract String getDefaultURI();
+	
+	/** Object that allows interaction with the request */
+	public interface RequestHandler {
+		/** @return the value stored for the cookie with the given name */
+		String getCookieValue(String name);
+		
+		/** set the cookie with the given name to the given value */
+		void setCookieValue(String name, String value);
+		
+		/** set a persistent cookie with the given name to the given value.
+		 * 
+		 * @param expiry the number of seconds before the cookie expires; must be a positive number.
+		 */
+		void setPersistentCookieValue(String name, String value, int expiry);
+		
+		/** Remove the cookie with the given name */
+		void removeCookieValue(String name);
+	}
 
 	/** Register the objects that should be available for dependency injection. The
 	 * {@link ObjectProvider#register(Object)} method is typically used.
 	 */
-	protected void registerObjects(ObjectProvider injector) { }
+	protected void registerObjects(ObjectProvider injector, RequestHandler request) { }
+	
+	protected <X> void registerLifecycleHandlers(LifecycleHandlerSet hs, RequestHandler request) { }
 
 	/** Register any custom request parameter parsers. The method
 	 * {@link StRenderer#registerArgParser(Class, InputArgParser)
@@ -269,23 +293,32 @@ public abstract class SpiderServlet extends HttpServlet {
 	/** Handle an exception thrown; this should never happen during normal operation of the app and is in all
 	 * cases the result of a programming error.
 	 * 
-	 * In debug mode the error is printed directly on the respond, otherwise the user is redirected to the generic
-	 * error page (error.st).
+	 * In debug mode the error is printed directly to the response, otherwise a generic error messages is displayed.
 	 */
 	protected void handleException(HttpServletRequest req, HttpServletResponse res, Throwable t) throws IOException {
 		log.error("For URI: " + req.getRequestURI(), t);
 		if (debugMode) {
 			printError(res, t);
 		} else {
-			res.sendRedirect("error");
+			res.setStatus(500);
+			printError(res, "An error occurred in the application.");
 		}
 	}
 
 	/** print the error */
 	protected void printError(HttpServletResponse res, Throwable t) throws IOException {
+		StringWriter w = new StringWriter();
+		PrintWriter pw = new PrintWriter(w);
+		t.printStackTrace(pw);
+		pw.close();
+		printError(res, w.toString());
+	}
+
+	/** print the error */
+	protected void printError(HttpServletResponse res, String s) throws IOException {
 		PrintWriter w = new PrintWriter(getUtf8Writer(res));
 		w.println("<pre>");
-		t.printStackTrace(w);
+		w.println(s);
 		w.println("</pre>");
 		w.flush();
 	}
@@ -302,7 +335,7 @@ public abstract class SpiderServlet extends HttpServlet {
 
 	/** Parse the URI and forward the request to the appropriate task */
 	protected void handleInternal(HttpServletRequest req, HttpServletResponse res) throws IOException {
-		String uri = req.getRequestURI();
+		String uri = getUriForRequest(req);
 		if (uri.length() == 0) {
 			res.sendRedirect("/" + getDefaultURI());
 			return;
@@ -310,7 +343,8 @@ public abstract class SpiderServlet extends HttpServlet {
 		if (serveStatic(uri, res)) return;
 		log.info("Serving URI: " + uri + (debugMode ? " [debug mode]" : ""));
 		
-		ITask t = findTask(uri);
+		RequestHandler request = makeRequest(req, res);
+		ITask t = findTask(uri, request);
 		if (t == null) {
 			log.info("No task found, sending to default URI");
 			res.sendRedirect(getDefaultURI());
@@ -322,17 +356,64 @@ public abstract class SpiderServlet extends HttpServlet {
 		
 		List<EmbeddedContent> embeddedContent = Empty.list();
 		for (EmbeddedRenderTask ert : t.dependsOn())
-			renderEmbedded(ert, reqParams, embeddedContent);
+			renderEmbedded(ert, reqParams, request, embeddedContent);
 
-		renderFinal(t, req, reqParams, embeddedContent, res);
+		renderFinal(t, req, reqParams, request, embeddedContent, res);
+	}
+
+	/** @return the URI requested by the given HttpServletRequest */
+	protected String getUriForRequest(HttpServletRequest req) {
+		return req.getRequestURI().substring(req.getContextPath().length());
+	}
+
+	private RequestHandler makeRequest(HttpServletRequest req, final HttpServletResponse response) {
+		final Map<String, String> m = Empty.hashMap();
+		Cookie[] cookies = req.getCookies();
+		if (cookies != null) {
+			for (Cookie c : cookies) {
+				addCookie(m, c);
+			}
+		}
+		return new RequestHandler() {
+			@Implement public String getCookieValue(String name) {
+				return m.get(name);
+			}
+			@Implement public void setCookieValue(String name, String value) {
+				storeCookie(makeCookie(name, value));
+			}
+			@Implement public void setPersistentCookieValue(String name, String value, int expiry) {
+				if (expiry <= 0)
+					throw new IllegalArgumentException("expiry must be a positive number: " + expiry);
+				
+				Cookie c = makeCookie(name, value);
+				c.setMaxAge(expiry);
+				storeCookie(c);
+			}
+			@Implement public void removeCookieValue(String name) {
+				Cookie c = makeCookie(name, null);
+				c.setMaxAge(0);
+				storeCookie(c);
+			}
+			private void storeCookie(Cookie c) {
+				response.addCookie(c);
+				addCookie(m, c);
+			}
+			private Cookie makeCookie(String name, String value) {
+				return new Cookie(name, value);
+			}
+		};
+	}
+
+	private void addCookie(final Map<String, String> m, Cookie c) {
+		m.put(c.getName(), c.getValue());
 	}
 
 	/** render the given embedded task (recursively) */
-	private void renderEmbedded(EmbeddedRenderTask t, Map<String, String[]> reqParams, List<EmbeddedContent> embeddedContent) {
+	private void renderEmbedded(EmbeddedRenderTask t, Map<String, String[]> reqParams, RequestHandler request, List<EmbeddedContent> embeddedContent) {
 		for (EmbeddedRenderTask ert : t.dependsOn())
-			renderEmbedded(ert, reqParams, embeddedContent);
+			renderEmbedded(ert, reqParams, request, embeddedContent);
 
-		PostAction po = render(t, reqParams, null, "embedded/");
+		PostAction po = render(t, reqParams, request, null, "embedded/");
 		if (po instanceof StRenderPostAction)
 			embeddedContent.add(new EmbeddedContent(t, (StRenderPostAction) po));
 		else
@@ -377,7 +458,7 @@ public abstract class SpiderServlet extends HttpServlet {
 	}
 
 	/** @return an instance of the task the given URI maps to, or null if no such class exists */
-	private ITask findTask(String uri) {
+	private ITask findTask(String uri, RequestHandler request) {
 		String tn = extractTaskName(uri);
 		if (tn != null) {
 			String cn = taskPackage + tn;
@@ -388,28 +469,27 @@ public abstract class SpiderServlet extends HttpServlet {
 				throw new RuntimeException("No class " + cn);
 			}
 			if (c != null && ITask.class.isAssignableFrom(c)) {
-				@SuppressWarnings({"unchecked","cast"})
+				@SuppressWarnings({"unchecked"})
 				Constructor<ITask>[] consArr = (Constructor<ITask>[]) c.getConstructors();
 				if (consArr.length != 1)
 					throw new RuntimeException("Class " + c + " must have exactly one constructor");
-				Constructor<ITask> cons = consArr[0];
-				ObjectProvider injector = makeObjectProvider();
-				Object[] consArgs = injector.makeArgsFor(cons);
-				try {
-					return cons.newInstance(consArgs);
-				} catch (Exception ex) {
-					throw new RuntimeException("Could not invoke constructor " + cons + " with " + Arrays.toString(consArgs) + " for " + c, ex);
-				}
+				return new MethodInvoker(makeObjectProvider(request), makeLifecycleHandlerSet(request)).invoke(consArr[0]);
 			}
 		}
 		return null;
 	}
 	
 	/** @return an instance of ObjectProvider with all the objects that are available for dependency injection */
-	private ObjectProvider makeObjectProvider() {
+	private ObjectProvider makeObjectProvider(RequestHandler request) {
 		ObjectProvider injector = new ObjectProvider();
-		registerObjects(injector);
+		registerObjects(injector, request);
 		return injector;
+	}
+	
+	private LifecycleHandlerSet makeLifecycleHandlerSet(RequestHandler request) {
+		LifecycleHandlerSet hs = MethodInvoker.getLifecycleHandlerSet();
+		registerLifecycleHandlers(hs, request);
+		return hs;
 	}
 
 	/** @return the task name the given URI maps to */
@@ -451,28 +531,34 @@ public abstract class SpiderServlet extends HttpServlet {
 	}
 	
 	/** render the given task and write the output to the response */
-	private void renderFinal(ITask t, HttpServletRequest req, Map<String, String[]> reqParams, List<EmbeddedContent> embeddedContent, HttpServletResponse res) throws IOException {
-		PostAction po = render(t, reqParams, embeddedContent, "pages/");
+	private void renderFinal(ITask t, HttpServletRequest req, Map<String, String[]> reqParams, RequestHandler request, List<EmbeddedContent> embeddedContent, HttpServletResponse res) throws IOException {
+		PostAction po = render(t, reqParams, request, embeddedContent, "pages/");
 		
 		if (po instanceof CustomPostAction) {
 			((CustomPostAction)po).respond(req, res);
 			
 		} else if (po instanceof StRenderPostAction) {
-			if (!(t instanceof IRenderTask))
-				throw new RuntimeException("Task " + t + " must be a RenderTask");
-			
-			IRenderTask rt = (IRenderTask) t;
 			String stContent = ((StRenderPostAction)po).getStContent();
-			
-			StringTemplate pageSt = pageStGroup.getInstanceOf("page");
-			pageSt.setAttribute("pagetitle", rt.getPageTitle());
-			pageSt.setAttribute("body", unsafeHtmlString(stContent));
-
-			addEmbedded(embeddedContent, pageSt);
-			
+			HttpHeaders.addNoCacheHeaders(res);
 			Writer w = getUtf8Writer(res);
 			try {
-				pageSt.write(new AutoIndentWriter(w));
+				if (t instanceof IAjaxRenderTask) {
+					IOHelpers.copy(new StringReader(stContent), w);
+
+				} else if (t instanceof IRenderTask) {
+					IRenderTask rt = (IRenderTask) t;
+
+					StringTemplate pageSt = pageStGroup.getInstanceOf("page");
+					pageSt.setAttribute("pagetitle", rt.getPageTitle());
+					pageSt.setAttribute("body", unsafeHtmlString(stContent));
+
+					addEmbedded(embeddedContent, pageSt);
+
+					pageSt.write(new AutoIndentWriter(w));
+
+				} else {
+					throw new RuntimeException("Task " + t + " is of unknown type");
+				}
 			} finally {
 				w.close();
 			}
@@ -490,7 +576,7 @@ public abstract class SpiderServlet extends HttpServlet {
 	private static final Pattern CLASS_NAME_PREFIX_PATTERN = Pattern.compile(".*\\.(.+)Task.*");
 
 	/** @return the PostAction returned from {@link StRenderer#actionAndRender(ObjectProvider, Map)} on the given task */
-	private PostAction render(ITask t, Map<String, String[]> reqParams, final List<EmbeddedContent> embeddedContent, final String relativeTemplatePath) {
+	private PostAction render(ITask t, Map<String, String[]> reqParams, RequestHandler request, final List<EmbeddedContent> embeddedContent, final String relativeTemplatePath) {
 		StRenderer renderer = new StRenderer(t, debugMode) {
 			@Override protected Pattern getClassNamePrefixPattern() {
 				return CLASS_NAME_PREFIX_PATTERN;
@@ -509,10 +595,10 @@ public abstract class SpiderServlet extends HttpServlet {
 		};
 		registerInputArgParser(renderer);
 		
-		ObjectProvider injector = makeObjectProvider();
+		ObjectProvider injector = makeObjectProvider(request);
 
 		long nt = System.nanoTime();
-		PostAction po = renderer.actionAndRender(injector, reqParams);
+		PostAction po = renderer.actionAndRender(injector, makeLifecycleHandlerSet(request), reqParams);
 		log.info("StRender of " + t.getClass().getSimpleName() + " in " + TimeUnit.MILLISECONDS.convert(System.nanoTime() - nt, TimeUnit.NANOSECONDS) + " ms");
 		return po;
 	}

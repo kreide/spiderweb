@@ -91,6 +91,13 @@ public class CollUtils {
 	public static <X> List<X> reversedCopy(Collection<X> l) {
 		return CollUtils.reverse(Empty.list(l));
 	}
+	
+	/** Add obj to the collection for key, creating a new list if necessary */
+	public static <K, X> void addToMapList(Map<K, List<X>> m, K key, X obj) {
+		List<X> l = m.get(key);
+		if (l == null) m.put(key, l = Empty.list());
+		l.add(obj);
+	}
 
 	/** Convert the given primitive array to a list */
 	public static List<Integer> toList(int[] ia) {
@@ -304,6 +311,16 @@ public class CollUtils {
 		int size = c.size();
 		if (size != 1) throw new AssertionError("Expected size 1, was: " + size + " in " + c);
 		return first(c);
+	}
+	
+	/**
+	 * @return the only element in the collection, or null if empty
+	 * @throws RuntimeException if the collection contains more than one element
+	 */
+	public static <X> X getOneOrNull(Collection<X> c) {
+		int size = c.size();
+		if (size > 1) throw new RuntimeException("Expected size 0 or 1, was: " + size + " in " + c);
+		return firstOrNull(c);
 	}
 	
 	/**

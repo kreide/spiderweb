@@ -26,6 +26,7 @@ import javax.servlet.http.HttpServletResponse;
 
 import com.medallia.spider.IRenderTask;
 import com.medallia.spider.SpiderServlet;
+import com.medallia.spider.Task;
 import com.medallia.tiny.web.JettyWebRunner;
 import com.medallia.tiny.web.ServletContextAdapter;
 
@@ -53,8 +54,7 @@ import com.medallia.tiny.web.ServletContextAdapter;
 public abstract class RenderTaskTestCase extends StRenderTestCase<IRenderTask> {
 
 	@Override protected String uriForTask(Class<? extends IRenderTask> ct) {
-		String sn = ct.getSimpleName();
-		return "//" + sn.substring(0, sn.length()-4).toLowerCase();
+		return "/" + Task.uriNameForTask(ct);
 	}
 
 	/** @return a ServletMock that forwards request to an instance of the given class */
@@ -66,7 +66,7 @@ public abstract class RenderTaskTestCase extends StRenderTestCase<IRenderTask> {
 			public Enumeration getInitParameterNames() { return null; }
 			public ServletContext getServletContext() {
 				return new ServletContextAdapter() {
-					public String getRealPath(String relativePath) {
+					@Override public String getRealPath(String relativePath) {
 						return new File(JettyWebRunner.findWebRoot(), relativePath).getAbsolutePath();
 					}
 				};
@@ -75,6 +75,9 @@ public abstract class RenderTaskTestCase extends StRenderTestCase<IRenderTask> {
 		return new ServletMock() {
 			public void service(HttpServletRequest req, HttpServletResponse res) throws Exception {
 				servlet.service(req, res);
+			}
+			public void destroy() {
+				servlet.destroy();
 			}
 		};
 	}

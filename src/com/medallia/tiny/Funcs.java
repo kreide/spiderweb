@@ -20,6 +20,7 @@ import java.util.Collections;
 import java.util.Comparator;
 import java.util.Iterator;
 import java.util.List;
+import java.util.Map;
 
 
 /** Support for some functional idioms */
@@ -43,6 +44,29 @@ public class Funcs {
 		 for (A a : as) bs.add(func.call(a));
 		 return bs;
 	}
+
+	/** @return a map with the values obtained from the iterator as values and the keys from the given function */
+	public static <K, V> Map<K, V> buildMap(Iterable<? extends V> it, Func<V, K> func) {
+		Map<K, V> m = Empty.hashMap();
+		for (V v : it)
+			m.put(func.call(v), v);
+		return m;
+	}
+
+	/** @return map with keys obtained from the given function that maps to a list with all the values for that key */
+	public static <K, V> Map<K, List<V>> partition(Iterable<? extends V> it, Func<V, K> func) {
+		return partition(Empty.<K, List<V>>hashMap(), it, func);
+	}
+	/** @return linked map with keys obtained from the given function that maps to a list with all the values for that key */
+	public static <K, V> Map<K, List<V>> partitionOrdered(Iterable<? extends V> it, Func<V, K> func) {
+		return partition(Empty.<K, List<V>>linkedHashMap(), it, func);
+	}
+	private static <K, V> Map<K, List<V>> partition(Map<K, List<V>> m, Iterable<? extends V> it, Func<V, K> func) {
+		for (V v : it)
+			CollUtils.addToMapList(m, func.call(v), v);
+		return m;
+	}
+
 	/** Lazy version of 'map' -- will map each element as it is returned by the iterator */
 	public static <A,B> Iterable<B> wrapIterable(final Iterable<? extends A> as, final Func<A,B> func) {
 		return new Iterable<B>() {

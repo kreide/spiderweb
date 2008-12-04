@@ -26,6 +26,7 @@ import java.lang.reflect.Proxy;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.ConcurrentMap;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -37,6 +38,8 @@ import org.antlr.stringtemplate.StringTemplateWriter;
 import org.antlr.stringtemplate.language.ASTExpr;
 import org.apache.commons.lang.StringEscapeUtils;
 
+import com.medallia.spider.MethodInvoker;
+import com.medallia.spider.MethodInvoker.LifecycleHandlerSet;
 import com.medallia.spider.api.StRenderable.Input;
 import com.medallia.spider.api.StRenderable.Output;
 import com.medallia.spider.api.StRenderable.PostAction;
@@ -109,8 +112,8 @@ public abstract class StRenderer {
 	 * @return result of the action and render
 	 * @throws MissingAttributesException if the template referenced any attributes not set by the action method
 	 */
-	public PostAction actionAndRender(ObjectProvider injector, Map<String, String[]> inputParams) throws MissingAttributesException {
-		PostAction pa = invokeAction(injector, inputParams);
+	public PostAction actionAndRender(ObjectProvider injector, LifecycleHandlerSet hs, Map<String, String[]> inputParams) throws MissingAttributesException {
+		PostAction pa = invokeAction(injector, hs, inputParams);
 		return pa == null ? defaultPostAction() : render(pa);
 	}
 	
@@ -164,7 +167,7 @@ public abstract class StRenderer {
 		return x;
 	}
 	
-	private PostAction invokeAction(ObjectProvider injector, Map<String, String[]> inputParams) {
+	private PostAction invokeAction(ObjectProvider injector, LifecycleHandlerSet hs, Map<String, String[]> inputParams) {
 		DynamicInputImpl dynamicInput = new DynamicInputImpl(inputParams, inputArgParsers);
 		injector = injector.copyWith(dynamicInput).errorOnUnknownType();
 		
@@ -174,14 +177,9 @@ public abstract class StRenderer {
 			injector.register(createInput(inputInterface, dynamicInput));
 		}
 		
-		Object[] args = injector.makeArgsFor(am);
-		try {
-			return (PostAction) am.invoke(renderable, args);
-		} catch (Exception ex) {
-			throw new RuntimeException("While invoking " + am + " with " + Arrays.toString(args), ex);
-		}
+		return (PostAction) new MethodInvoker(injector, hs).invoke(am, renderable);
 	}
-
+	
 	/** object that can parse a request parameter argument into a proper type */
 	public interface InputArgParser<X> {
 		/** @return the parsed object */
@@ -245,17 +243,25 @@ public abstract class StRenderer {
 	}
 	
 	private List<String> missingAttrs;
+	private Set<String> nullAttrs;
 	
 	/** @return the result of rendering the given StringTemplate in the context set up by this class */
 	public String render(StringTemplate st) throws MissingAttributesException {
+		missingAttrs = Empty.list();
+		nullAttrs = Empty.hashSet();
+		
 		Class<Output> outputInterface = findInterfaceWithAnnotation(OUTPUT_ANNOTATION_MAP, renderable.getClass(), Output.class);
 		if (outputInterface != null) {
 			for (Field f : outputInterface.getDeclaredFields()) {
 				f.setAccessible(true);
 				try {
-					Object obj = renderable.getAttr((V<?>) f.get(null));
+					V<?> tag = (V<?>) f.get(null);
+					String fname = f.getName().toLowerCase();
+					Object obj = renderable.getAttr(tag);
 					if (obj != null) {
-						st.setAttribute(f.getName().toLowerCase(), obj);
+						st.setAttribute(fname, obj);
+					} else if (renderable.hasAttr(tag)) {
+						nullAttrs.add(fname);
 					}
 				} catch (Exception ex) {
 					throw new RuntimeException("For " + f, ex);
@@ -264,14 +270,13 @@ public abstract class StRenderer {
 		}
 
 		try {
-			missingAttrs = Empty.list();
-		
 			String stContent = renderFinal(st);
 			if (!missingAttrs.isEmpty()) throw new MissingAttributesException(missingAttrs, st);
 			
 			return stContent;
 		} finally {
 			missingAttrs = null;
+			nullAttrs = null;
 		}
 	}
 
@@ -325,10 +330,10 @@ public abstract class StRenderer {
 			@Override public String getFileNameFromTemplateName(String name) {
 				return super.getFileNameFromTemplateName(findPathForTemplate(renderable.getClassForTemplateName(), name));
 			}
-			public StringTemplate getEmbeddedInstanceOf(StringTemplate enclosingInstance, String name) throws IllegalArgumentException {
+			@Override public StringTemplate getEmbeddedInstanceOf(StringTemplate enclosingInstance, String name) throws IllegalArgumentException {
 				final StTool t = getStTool(name);
 				if (t != null) return withEnclosing(enclosingInstance, new StringTemplate(this, name) {
-					public int write(StringTemplateWriter out) throws IOException {
+					@Override public int write(StringTemplateWriter out) throws IOException {
 						// Use ASTExpr to render since the code for using AttributeRenderer is there
 						return new ASTExpr(null, null, null).writeAttribute(this, t.render(this), out);
 					}
@@ -343,7 +348,7 @@ public abstract class StRenderer {
 				return new StringTemplate() {
 					@Override public Object get(StringTemplate self, String attribute) {
 						Object o = super.get(self, attribute);
-						if (self == this && o == null) {
+						if (self == this && o == null && !nullAttrs.contains(attribute)) {
 							missingAttrs.add(attribute);
 						}
 						return o;

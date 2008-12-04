@@ -25,7 +25,7 @@ public abstract class StringBase implements CharSequence, Serializable {
 		this.s = s;			
 	}
 	protected String s;
-	public String toString() {
+	@Override public String toString() {
 		return s + "[an exploded " + this.getClass() + " (did you remember inScript() or inAttr()?)]";
 	}
 	public int length() {

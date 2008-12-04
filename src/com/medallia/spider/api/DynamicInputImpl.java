@@ -62,13 +62,18 @@ public class DynamicInputImpl implements DynamicInput {
 		
 		// boolean is used for checkboxes, and false is encoded as a missing value
 		if (type == Boolean.class || type == Boolean.TYPE) {
-			return type.cast(v != null);
+			@SuppressWarnings("unchecked")
+			X x = (X) Boolean.valueOf(v != null);
+			return x;
 		}
 		
 		// the remaining types have proper null values
 		if (v == null) return null;
 		
-		return type.cast(parseSingleValue(type, v, anno));
+		// Do not use Class.cast here since it does not work on primitive types
+		@SuppressWarnings("unchecked")
+		X x = (X) parseSingleValue(type, v, anno);
+		return x;
 	}
 	
 	/**

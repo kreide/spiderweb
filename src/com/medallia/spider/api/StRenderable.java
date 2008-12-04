@@ -136,6 +136,9 @@ public interface StRenderable {
 	/** @return the Object for the given TypeTag */
 	<X> X getAttr(V<X> tag);
 	
+	/** @return true if the given TypeTag is set */
+	boolean hasAttr(V<?> tag);
+	
 	/** @return the class which is in the same package as the .st file; this method is typically
 	 * overidden by tasks that extend another file, but want to use the same .st file.
 	 */

@@ -56,27 +56,13 @@ public class StaticResources {
 							return MimeType.getMimeTypeForExtension(ext);
 						}
 						@Implement public void copyTo(OutputStream stream) throws IOException {
-							copy(in, stream);
+							IOHelpers.copy(in, stream);
 						}
 					};
 				}
 				return null;
 			}
 		};
-	}
-	
-	private static final int COPY_BUFFER_SIZE = 1024 * 4;
-	
-	/** Copy input to output; neither stream is closed */
-	public static int copy(InputStream input, OutputStream output) throws IOException {
-		byte[] buffer = new byte[COPY_BUFFER_SIZE];
-		int count = 0;
-		int n = 0;
-		while (-1 != (n = input.read(buffer))) {
-			output.write(buffer, 0, n);
-			count += n;
-		}
-		return count;
 	}
 	
 }
