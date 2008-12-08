@@ -254,17 +254,18 @@ public abstract class StRenderer {
 		if (outputInterface != null) {
 			for (Field f : outputInterface.getDeclaredFields()) {
 				f.setAccessible(true);
+				V<?> tag;
 				try {
-					V<?> tag = (V<?>) f.get(null);
-					String fname = f.getName().toLowerCase();
-					Object obj = renderable.getAttr(tag);
-					if (obj != null) {
-						st.setAttribute(fname, obj);
-					} else if (renderable.hasAttr(tag)) {
-						nullAttrs.add(fname);
-					}
-				} catch (Exception ex) {
-					throw new RuntimeException("For " + f, ex);
+					tag = (V<?>) f.get(null);
+				} catch (Exception e) {
+					throw new RuntimeException("For " + f, e);
+				}
+				String fname = f.getName().toLowerCase();
+				Object obj = renderable.getAttr(tag);
+				if (obj != null) {
+					st.setAttribute(fname, obj);
+				} else if (renderable.hasAttr(tag)) {
+					nullAttrs.add(fname);
 				}
 			}
 		}

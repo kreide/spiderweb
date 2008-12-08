@@ -11,6 +11,7 @@ import com.medallia.tiny.CollUtils;
 import com.medallia.tiny.Empty;
 import com.medallia.tiny.Implement;
 import com.medallia.tiny.ObjectProvider;
+import com.medallia.tiny.Rethrow;
 
 /**
  * Class that handles invoking a given method or constructor. An instance of
@@ -63,29 +64,33 @@ public class MethodInvoker {
 		this.handlers = ((LifecycleHandlerSet0)h).getHandlers();
 	}
 
-	/** @return the object created by invoking the given constructor */
+	/** @return the object created by invoking the given constructor
+	 * Note: any exception thrown by the constructor is thrown unchecked by this method.
+	 */
 	public <X> X invoke(final Constructor<X> cons) {
 		final Object[] consArgs = injector.makeArgsFor(cons);
 		return invoke(consArgs, new Callable<X>(){
-			@Implement public X call() {
+			@Implement public X call() throws Exception {
 				try {
 					return cons.newInstance(consArgs);
-				} catch (Exception ex) {
-					throw new RuntimeException("While invoking constructor " + cons + " with " + Arrays.toString(consArgs), ex);
+				} catch (Exception e) {
+					throw Rethrow.withComment(e, "While invoking constructor " + cons + " with " + Arrays.toString(consArgs));
 				}
 			}
 		});
 	}
 	
-	/** @return the object returned from invoking the given method on the given object */
+	/** @return the object returned from invoking the given method on the given object
+	 * Note: any exception thrown by the constructor is thrown unchecked by this method.
+	 */
 	public Object invoke(final Method m, final Object obj) {
 		final Object[] args = injector.makeArgsFor(m);
 		return invoke(args, new Callable<Object>(){
 			@Implement public Object call() throws Exception {
 				try {
 					return m.invoke(obj, args);
-				} catch (Exception ex) {
-					throw new RuntimeException("While invoking method " + m + " with " + Arrays.toString(args), ex);
+				} catch (Exception e) {
+					throw Rethrow.withComment(e, "While invoking method " + m + " with " + Arrays.toString(args));
 				}
 			}
 		});
@@ -102,12 +107,13 @@ public class MethodInvoker {
 		List<BoundLifecycleHandler> hl = findLifecycleHandlers(args);
 		try {
 			return invoke(hl, args, c);
-		} catch (Throwable e) {
-			throw new RuntimeException(e);
+		} catch (Exception e) {
+			// Work around Java's type system
+			throw Rethrow.uncheckedThrow(e);
 		}
 	}
 	
-	private <X> X invoke(List<BoundLifecycleHandler> hl, Object[] args, Callable<X> c) throws Throwable {
+	private <X> X invoke(List<BoundLifecycleHandler> hl, Object[] args, Callable<X> c) throws Exception {
 		if (hl.isEmpty()) {
 			return c.call();
 		} else {
@@ -122,7 +128,7 @@ public class MethodInvoker {
 				} catch (Throwable nested) {
 					// ignore these
 				}
-				throw t;
+				throw Rethrow.uncheckedThrow(t);
 			}
 			h.onSuccess();
 			return x;
