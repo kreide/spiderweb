@@ -25,7 +25,6 @@ import com.medallia.spider.StaticResources.StaticResource;
 import com.medallia.spider.StaticResources.StaticResourceLookup;
 import com.medallia.tiny.Encoding;
 import com.medallia.tiny.Implement;
-import com.medallia.tiny.string.HtmlString;
 
 
 /**
@@ -44,7 +43,7 @@ public class CachedTool implements StTool {
 		this.srl = srl;
 	}
 
-	@Implement public HtmlString render(StringTemplate st) {
+	@Implement public String render(StringTemplate st) {
 		String resourceName = String.valueOf(st.getAttribute("it"));
 		StaticResource sr = srl.findStaticResource(resourceName);
 		
@@ -60,9 +59,7 @@ public class CachedTool implements StTool {
 			// create and return link
 			String md5 = Encoding.md5(buffer.toByteArray());
 			
-			@SuppressWarnings("deprecation")
-			HtmlString html = HtmlString.rawUnsafe(resourceName + "?" + md5);
-			return html;
+			return resourceName + "?" + md5;
 		}
 		
 		throw new RuntimeException("Resource not found: " + resourceName);

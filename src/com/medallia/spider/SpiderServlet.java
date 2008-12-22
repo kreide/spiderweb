@@ -209,6 +209,8 @@ public abstract class SpiderServlet extends HttpServlet {
 		};
 		pageStGroup.setErrorListener(ExplodingStringTemplateErrorListener.LISTENER);
 		StRenderer.registerWebRenderers(pageStGroup);
+		if (debugMode == null)
+			setDebugMode(true); // true by default if not set
 	}
 
 	/**
@@ -248,7 +250,7 @@ public abstract class SpiderServlet extends HttpServlet {
 	 */
 	protected void registerInputArgParser(StRenderer renderer) { }
 	
-	private boolean debugMode = true;
+	private Boolean debugMode;
 
 	/** Set the debug mode on or off. In debug mode the .st files are re-read on each
 	 * request and error messages and stack traces may be printed on the rendered
