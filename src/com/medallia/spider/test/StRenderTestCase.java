@@ -141,7 +141,7 @@ public abstract class StRenderTestCase<X extends StRenderable> extends TestCaseW
 	}
 	
 	/** @return a {@link Proxy} implementation of the given interface where all methods return null */
-	private static <X> X nullProxyForInterface(Class<X> x) {
+	public static <X> X nullProxyForInterface(Class<X> x) {
 		return x.cast(Proxy.newProxyInstance(x.getClassLoader(), new Class<?>[] { x }, new InvocationHandler() {
 			public Object invoke(Object arg0, Method arg1, Object[] arg2) throws Throwable {
 				return null;

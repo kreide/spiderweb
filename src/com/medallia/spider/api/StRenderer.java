@@ -167,7 +167,15 @@ public abstract class StRenderer {
 		return x;
 	}
 	
-	private PostAction invokeAction(ObjectProvider injector, LifecycleHandlerSet hs, Map<String, String[]> inputParams) {
+	/**
+	 * Call the action method of the {@link StRenderable} and return the post action that needs to be rendered
+	 * 
+	 * @param injector dependency injector with the objects available for injection
+	 * @param hs handler for the life cycle of the injected objects
+	 * @param inputParams the request parameters
+	 * @return result of the action and render
+	 */
+	public PostAction invokeAction(ObjectProvider injector, LifecycleHandlerSet hs, Map<String, String[]> inputParams) {
 		DynamicInputImpl dynamicInput = new DynamicInputImpl(inputParams, inputArgParsers);
 		injector = injector.copyWith(dynamicInput).errorOnUnknownType();
 		
