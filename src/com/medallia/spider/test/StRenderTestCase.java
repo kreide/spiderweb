@@ -29,6 +29,7 @@ import java.util.List;
 import java.util.Map;
 
 import javax.servlet.ServletOutputStream;
+import javax.servlet.http.Cookie;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletRequestWrapper;
 import javax.servlet.http.HttpServletResponse;
@@ -93,6 +94,7 @@ public abstract class StRenderTestCase<X extends StRenderable> extends TestCaseW
 			}
 			@Override public String getContextPath() { return ""; }
 			@Override public Map getParameterMap() { return params; }
+			@Override public Cookie[] getCookies() { return new Cookie[0]; }
 			@Override public HttpSession getSession() { return nullProxyForInterface(HttpSession.class); }
 			@Override public HttpSession getSession(boolean create) { return getSession(); }
 			@Override public Object getAttribute(String name) { return null; }
