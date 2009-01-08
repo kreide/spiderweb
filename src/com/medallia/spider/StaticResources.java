@@ -42,10 +42,10 @@ public class StaticResources {
 				int k = uri.lastIndexOf('.');
 				if (k > 0) {
 					final String ext = uri.substring(k + 1);
-					String path = resourceMap.get(ext);
+					final String path = resourceMap.get(ext);
 
 					int slashIndex = uri.indexOf('/');
-					String resourceName = uri.substring(slashIndex < 0  ? 0 : slashIndex + 1, uri.length());
+					final String resourceName = uri.substring(slashIndex < 0  ? 0 : slashIndex + 1, uri.length());
 					final InputStream in = path != null ? clazz.getResourceAsStream(path + "/" + resourceName) : null;
 					
 					return new StaticResource() {
@@ -56,6 +56,8 @@ public class StaticResources {
 							return MimeType.getMimeTypeForExtension(ext);
 						}
 						@Implement public void copyTo(OutputStream stream) throws IOException {
+							if (!exists())
+								throw new RuntimeException("Resource " + resourceName + " in " + path + " for " + clazz + " not found");
 							IOHelpers.copy(in, stream);
 						}
 					};

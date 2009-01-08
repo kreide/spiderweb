@@ -189,7 +189,7 @@ public abstract class SpiderServlet extends HttpServlet {
 	
 	/** constructor that creates the initial state */
 	public SpiderServlet() {
-		staticResourceLookup = StaticResources.makeStaticResourceLookup(getClass());
+		staticResourceLookup = StaticResources.makeStaticResourceLookup(getServletClass());
 		stTools = buildStToolsMap();
 		pageStGroup = new StringTemplateGroup("mygroup") {
 			@Override public String getFileNameFromTemplateName(String name) {
@@ -211,6 +211,18 @@ public abstract class SpiderServlet extends HttpServlet {
 		StRenderer.registerWebRenderers(pageStGroup);
 		if (debugMode == null)
 			setDebugMode(true); // true by default if not set
+	}
+
+	/**
+	 * @return the servlet class; usually this is {@link #getClass()}, but if that
+	 * class is in a package named 'test' the superclass is used instead.
+	 */
+	@SuppressWarnings("unchecked")
+	protected Class<? extends SpiderServlet> getServletClass() {
+		Class<? extends SpiderServlet> c = getClass();
+		if (c.getPackage().getName().endsWith(".test"))
+			c = (Class<? extends SpiderServlet>) c.getSuperclass();
+		return c;
 	}
 
 	/**
@@ -270,7 +282,7 @@ public abstract class SpiderServlet extends HttpServlet {
 	 */
 	@Override
 	public void init(ServletConfig cfg) throws ServletException {
-		log = LogFactory.getLog(getClass());
+		log = LogFactory.getLog(getServletClass());
 		super.init(cfg);
 	}
 
@@ -444,7 +456,7 @@ public abstract class SpiderServlet extends HttpServlet {
 		}
 	}
 	
-	private final String taskPackage = findTaskPackage(getClass());
+	private final String taskPackage = findTaskPackage(getServletClass());
 	
 	/** @return the name of the package where task classes are assumed to be */
 	private String findTaskPackage(Class<? extends SpiderServlet> clazz) {
@@ -519,7 +531,7 @@ public abstract class SpiderServlet extends HttpServlet {
 	protected String findPathForTemplate(String name) {
 		name = "st/" + name;
 		String path = name + ".st";
-		Class<?> c = getClass();
+		Class<?> c = getServletClass();
 		while (c != null) {
 			if (c.getResource(path) != null)
 				return c.getPackage().getName().replace('.', '/') + "/" + name;
