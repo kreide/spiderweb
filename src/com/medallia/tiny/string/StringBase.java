@@ -35,5 +35,24 @@ public abstract class StringBase implements CharSequence, Serializable {
 	public char charAt(int arg0) {
 		return s.charAt(arg0);
 	}
+	
+	@Override public int hashCode() {
+		return s == null ? 0 : s.hashCode();
+	}
+	@Override public boolean equals(Object obj) {
+		if (this == obj)
+			return true;
+		if (obj == null)
+			return false;
+		if (getClass() != obj.getClass())
+			return false;
+		StringBase other = (StringBase) obj;
+		if (s == null) {
+			if (other.s != null)
+				return false;
+		} else if (!s.equals(other.s))
+			return false;
+		return true;
+	}
 
 }
