@@ -50,7 +50,6 @@ import com.medallia.tiny.CollUtils;
 import com.medallia.tiny.Empty;
 import com.medallia.tiny.Implement;
 import com.medallia.tiny.ObjectProvider;
-import com.medallia.tiny.string.ExplodingStringTemplateErrorListener;
 import com.medallia.tiny.string.HtmlString;
 import com.medallia.tiny.string.JsString;
 import com.medallia.tiny.string.StringTemplateBuilder.SimpleAttributeRenderer;
@@ -320,7 +319,11 @@ public abstract class StRenderer {
 		}
 	}
 
-	/** @return a StringTemplate with the template loaded from the given filename */
+	/**
+	 * @return a StringTemplate with the template loaded from the given filename.
+	 *         This template must be passed to {@link #render(StringTemplate)}
+	 *         to work correctly.
+	 */
 	protected StringTemplate getStInstance(String templateName) {
 		setStTemplatePathTl();
 		try {
@@ -330,11 +333,6 @@ public abstract class StRenderer {
 		}
 	}
 
-	/** @return the error listener that will be notified if an error occurs during ST rendering */
-	protected StringTemplateErrorListener getStErrorListener() {
-		return ExplodingStringTemplateErrorListener.LISTENER;
-	}
-	
 	/** actual perform the rendering of the given StringTemplate by calling {@link StringTemplate#toString()} */
 	protected String renderFinal(StringTemplate st) {
 		return st.toString();
@@ -360,12 +358,16 @@ public abstract class StRenderer {
 	/**
 	 * Object that creates {@link StringTemplate} instances; see
 	 * {@link StRenderer#makeStringTemplateFactory(StringTemplateErrorListener, StToolProvider)}.
-	 * Only the {@link #setRefreshInterval(int)} method should be called
-	 * directly by client code.
 	 */
 	public interface StringTemplateFactory {
-		/** @return a StringTemplate with the template loaded from the given template name */
+		/**
+		 * @return a StringTemplate with the template loaded from the given
+		 *         template name. Note that this method should NOT be invoked
+		 *         directly by client code; instead use
+		 *         {@link StRenderer#getStInstance(String)}.
+		 */
 		StringTemplate getStInstance(String templateName);
+		
 		/** @return a StringTemplate using the given template */
 		StringTemplate makeStInstance(String template);
 		
