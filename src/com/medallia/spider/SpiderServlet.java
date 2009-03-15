@@ -52,6 +52,8 @@ import com.medallia.spider.api.StRenderer;
 import com.medallia.spider.api.StRenderable.PostAction;
 import com.medallia.spider.api.StRenderer.InputArgParser;
 import com.medallia.spider.api.StRenderer.StRenderPostAction;
+import com.medallia.spider.api.StRenderer.StToolProvider;
+import com.medallia.spider.api.StRenderer.StringTemplateFactory;
 import com.medallia.spider.sttools.CachedTool;
 import com.medallia.spider.sttools.StTool;
 import com.medallia.spider.test.RenderTaskTestCase;
@@ -182,7 +184,11 @@ public abstract class SpiderServlet extends HttpServlet {
 	private static Log log;
 	
 	private final StaticResourceLookup staticResourceLookup;
+	
+	/** Used to render page.st */
 	private final StringTemplateGroup pageStGroup;
+	/** Used to render the .st files for {@link RenderTask} and {@link EmbeddedRenderTask} */
+	private final StringTemplateFactory stringTemplateFactory;
 	
 	/** map from name of a StTool to an instance of it */
 	private final Map<String, StTool> stTools;
@@ -191,7 +197,7 @@ public abstract class SpiderServlet extends HttpServlet {
 	public SpiderServlet() {
 		staticResourceLookup = StaticResources.makeStaticResourceLookup(getServletClass());
 		stTools = buildStToolsMap();
-		pageStGroup = new StringTemplateGroup("mygroup") {
+		pageStGroup = new StringTemplateGroup("PageStGroup") {
 			@Override public String getFileNameFromTemplateName(String name) {
 				return super.getFileNameFromTemplateName(findPathForTemplate(name));
 			}
@@ -209,6 +215,13 @@ public abstract class SpiderServlet extends HttpServlet {
 		};
 		pageStGroup.setErrorListener(ExplodingStringTemplateErrorListener.LISTENER);
 		StRenderer.registerWebRenderers(pageStGroup);
+		
+		stringTemplateFactory = StRenderer.makeStringTemplateFactory(ExplodingStringTemplateErrorListener.LISTENER, new StToolProvider() {
+			@Implement public StTool getStTool(String name) {
+				return SpiderServlet.this.getStTool(name);
+			}
+		});
+
 		if (debugMode == null)
 			setDebugMode(true); // true by default if not set
 	}
@@ -274,7 +287,10 @@ public abstract class SpiderServlet extends HttpServlet {
 	 */
 	protected void setDebugMode(boolean b) {
 		debugMode = b;
-		pageStGroup.setRefreshInterval(debugMode ? 0 : Integer.MAX_VALUE);
+		// must divide by 1000 since ST expects a number in seconds (and multiplies by 1000 causing overflow otherwise)
+		int refreshInterval = debugMode ? 0 : Integer.MAX_VALUE / 1000;
+		pageStGroup.setRefreshInterval(refreshInterval);
+		stringTemplateFactory.setRefreshInterval(refreshInterval);
 	}
 	
 	/** sets up the logging; this is done here instead of in the constructor to give subclasses
@@ -591,12 +607,9 @@ public abstract class SpiderServlet extends HttpServlet {
 
 	/** @return the PostAction returned from {@link StRenderer#actionAndRender(ObjectProvider, Map)} on the given task */
 	private PostAction render(ITask t, Map<String, String[]> reqParams, RequestHandler request, final List<EmbeddedContent> embeddedContent, final String relativeTemplatePath) {
-		StRenderer renderer = new StRenderer(t, debugMode) {
+		StRenderer renderer = new StRenderer(stringTemplateFactory, t) {
 			@Override protected Pattern getClassNamePrefixPattern() {
 				return CLASS_NAME_PREFIX_PATTERN;
-			}
-			@Override protected StTool getStTool(String name) {
-				return SpiderServlet.this.getStTool(name);
 			}
 			@Override protected String getPageRelativePath() {
 				return relativeTemplatePath;

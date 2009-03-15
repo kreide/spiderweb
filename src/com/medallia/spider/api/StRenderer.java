@@ -48,6 +48,7 @@ import com.medallia.spider.api.StRenderable.V;
 import com.medallia.spider.sttools.StTool;
 import com.medallia.tiny.CollUtils;
 import com.medallia.tiny.Empty;
+import com.medallia.tiny.Implement;
 import com.medallia.tiny.ObjectProvider;
 import com.medallia.tiny.string.ExplodingStringTemplateErrorListener;
 import com.medallia.tiny.string.HtmlString;
@@ -55,32 +56,30 @@ import com.medallia.tiny.string.JsString;
 import com.medallia.tiny.string.StringTemplateBuilder.SimpleAttributeRenderer;
 
 /**
- * Class that handles the rendering of an instance of {@link StRenderable}, which
- * is given in the constructor. The {@link #actionAndRender(ObjectProvider, Map)}
- * method is called to do the rendering.
+ * Class that handles the rendering of an instance of {@link StRenderable},
+ * which is given in the constructor. The
+ * {@link #actionAndRender(ObjectProvider, Map)} method is called to do the
+ * rendering.
  * <p>
  * 
- * The returned PostAction should be handled by the caller. One exception is
- * {@link StTemplatePostAction} which is replaced with a {@link StRenderPostAction}
- * by rendering the template. The caller can check whether the returned object
- * is an instance of that interface and if so retrieve the rendered content.
- *
+ * The PostAction returned from this method should be handled by the caller. One
+ * exception is {@link StTemplatePostAction} which is replaced with a
+ * {@link StRenderPostAction} by rendering the template. The caller can check
+ * whether the returned object is an instance of that interface and if so
+ * retrieve the rendered content.
+ * 
  */
 public abstract class StRenderer {
+	private final StringTemplateFactory stringTemplateFactory;
 	private final StRenderable renderable;
-	private final StringTemplateGroup stGroup;
 	
-	/** Forwards to {@link #StRenderer(StRenderable, boolean)} with true as the second argument */
-	public StRenderer(StRenderable renderable) {
-		this(renderable, true);
-	}
 	/**
-	 * @param renderable the object to render
+	 * @param stringTemplateFactory object returned from {@link #makeStringTemplateFactory(StringTemplateErrorListener, StToolProvider)}
 	 * @param debugMode true if debug mode is on; the template source is then re-read from disk every time
 	 */
-	public StRenderer(StRenderable renderable, boolean debugMode) {
+	public StRenderer(StringTemplateFactory stringTemplateFactory, StRenderable renderable) {
+		this.stringTemplateFactory = stringTemplateFactory;
 		this.renderable = renderable;
-		this.stGroup = createStGroup(renderable, debugMode);
 	}
 	
 	/** @return the default target */
@@ -226,8 +225,8 @@ public abstract class StRenderer {
 		}
 	}
 	
-	private String render(String tn) throws MissingAttributesException {
-		StringTemplate st = getStInstance(tn);
+	private String render(String templateName) throws MissingAttributesException {
+		StringTemplate st = getStInstance(templateName);
 		return render(st);
 	}
 	
@@ -250,13 +249,43 @@ public abstract class StRenderer {
 		return tn;
 	}
 	
-	private List<String> missingAttrs;
-	private Set<String> nullAttrs;
+	/**
+	 * Holder class for data structures used to detect which attributes are used
+	 * in the template, but without a value set.
+	 */
+	private static class StMissingAttrs {
+		public final List<String> missingAttrs = Empty.list();
+		public final Set<String> nullAttrs = Empty.hashSet();
+	}
+	
+	private static final ThreadLocal<StMissingAttrs> ST_MISSING_ATTRS_TL = new ThreadLocal<StMissingAttrs>();
+
+	/** Object used to look up the path to a named template */
+	private interface StTemplatePath {
+		/** See {@link StRenderer#findPathForTemplate(Class, String)} */
+		String findPathForTemplate(String name);
+	}
+	
+	/**
+	 * ThreadLocal used to store a callback to find the path to sub-templates
+	 * (which can happen in render context if one template includes another).
+	 */
+	private static final ThreadLocal<StTemplatePath> ST_TEMPLATE_PATH_TL = new ThreadLocal<StTemplatePath>();
+	
+	private void setStTemplatePathTl() {
+		ST_TEMPLATE_PATH_TL.set(new StTemplatePath() {
+			@Implement public String findPathForTemplate(String name) {
+				return StRenderer.this.findPathForTemplate(renderable.getClassForTemplateName(), name);
+			}
+		});
+	}
+	private void releaseStTemplatePathTl() {
+		ST_TEMPLATE_PATH_TL.remove();
+	}
 	
 	/** @return the result of rendering the given StringTemplate in the context set up by this class */
 	public String render(StringTemplate st) throws MissingAttributesException {
-		missingAttrs = Empty.list();
-		nullAttrs = Empty.hashSet();
+		StMissingAttrs ctx = new StMissingAttrs();
 		
 		Class<Output> outputInterface = findInterfaceWithAnnotation(OUTPUT_ANNOTATION_MAP, renderable.getClass(), Output.class);
 		if (outputInterface != null) {
@@ -273,35 +302,34 @@ public abstract class StRenderer {
 				if (obj != null) {
 					st.setAttribute(fname, obj);
 				} else if (renderable.hasAttr(tag)) {
-					nullAttrs.add(fname);
+					ctx.nullAttrs.add(fname);
 				}
 			}
 		}
 
+		ST_MISSING_ATTRS_TL.set(ctx);
+		setStTemplatePathTl();
 		try {
 			String stContent = renderFinal(st);
-			if (!missingAttrs.isEmpty()) throw new MissingAttributesException(missingAttrs, st);
+			if (!ctx.missingAttrs.isEmpty()) throw new MissingAttributesException(ctx.missingAttrs, st);
 			
 			return stContent;
 		} finally {
-			missingAttrs = null;
-			nullAttrs = null;
+			releaseStTemplatePathTl();
+			ST_MISSING_ATTRS_TL.remove();
 		}
 	}
 
 	/** @return a StringTemplate with the template loaded from the given filename */
-	protected StringTemplate getStInstance(String tn) {
-		return stGroup.getInstanceOf(tn);
+	protected StringTemplate getStInstance(String templateName) {
+		setStTemplatePathTl();
+		try {
+			return stringTemplateFactory.getStInstance(templateName);
+		} finally {
+			releaseStTemplatePathTl();
+		}
 	}
 
-	/** @return a StringTemplate using the given template */
-	public StringTemplate makeStInstance(String template) {
-		StringTemplate st = stGroup.createStringTemplate();
-		st.setGroup(stGroup);
-		st.setTemplate(template);
-		return st;
-	}
-	
 	/** @return the error listener that will be notified if an error occurs during ST rendering */
 	protected StringTemplateErrorListener getStErrorListener() {
 		return ExplodingStringTemplateErrorListener.LISTENER;
@@ -328,19 +356,42 @@ public abstract class StRenderer {
 		}
 		throw new RuntimeException("Cannot find template " + name);
 	}
-	
-	/** @return the StTool for the given name; by default this method always returns null */
-	protected StTool getStTool(String name) {
-		return null;
+
+	/**
+	 * Object that creates {@link StringTemplate} instances; see
+	 * {@link StRenderer#makeStringTemplateFactory(StringTemplateErrorListener, StToolProvider)}.
+	 * Only the {@link #setRefreshInterval(int)} method should be called
+	 * directly by client code.
+	 */
+	public interface StringTemplateFactory {
+		/** @return a StringTemplate with the template loaded from the given template name */
+		StringTemplate getStInstance(String templateName);
+		/** @return a StringTemplate using the given template */
+		StringTemplate makeStInstance(String template);
+		
+		/** See {@link StringTemplateFactory#setRefreshInterval(int)} */
+		void setRefreshInterval(int seconds);
+	}
+
+	/** Object that provides instances of {@link StTool} */
+	public interface StToolProvider {
+		/** @return the StTool for the given name */
+		StTool getStTool(String name);
 	}
 	
-	private StringTemplateGroup createStGroup(final StRenderable renderable, boolean debugMode) {
-		StringTemplateGroup stGroup = new StringTemplateGroup("mygroup") {
+	/**
+	 * @return a {@link StringTemplateFactory} object, which should be passed to
+	 *         {@link StRenderer#StRenderer(StringTemplateFactory, StRenderable)}.
+	 *         This object handles caching of the templates, thus it should be
+	 *         re-used for best performance.
+	 */
+	public static StringTemplateFactory makeStringTemplateFactory(StringTemplateErrorListener errorListener, final StToolProvider stToolProvider) {
+		final StringTemplateGroup stGroup = new StringTemplateGroup("StRenderer") {
 			@Override public String getFileNameFromTemplateName(String name) {
-				return super.getFileNameFromTemplateName(findPathForTemplate(renderable.getClassForTemplateName(), name));
+				return super.getFileNameFromTemplateName(ST_TEMPLATE_PATH_TL.get().findPathForTemplate(name));
 			}
 			@Override public StringTemplate getEmbeddedInstanceOf(StringTemplate enclosingInstance, String name) throws IllegalArgumentException {
-				final StTool t = getStTool(name);
+				final StTool t = stToolProvider.getStTool(name);
 				if (t != null) return withEnclosing(enclosingInstance, new StringTemplate(this, name) {
 					@Override public int write(StringTemplateWriter out) throws IOException {
 						// Use ASTExpr to render since the code for using AttributeRenderer is there
@@ -357,25 +408,36 @@ public abstract class StRenderer {
 				return new StringTemplate() {
 					@Override public Object get(StringTemplate self, String attribute) {
 						Object o = super.get(self, attribute);
-						if (self == this && o == null && !nullAttrs.contains(attribute)) {
-							missingAttrs.add(attribute);
+						StMissingAttrs ctx;
+						if (self == this && o == null && !(ctx = ST_MISSING_ATTRS_TL.get()).nullAttrs.contains(attribute)) {
+							ctx.missingAttrs.add(attribute);
 						}
 						return o;
 					}
 				};
 			}
 		};
-		stGroup.setErrorListener(getStErrorListener());
-		
+		stGroup.setErrorListener(errorListener);
 		registerWebRenderers(stGroup);
 		
-		if (debugMode)
-			stGroup.setRefreshInterval(0);
-		return stGroup;
+		return new StringTemplateFactory() {
+			@Implement public StringTemplate getStInstance(String templateName) {
+				return stGroup.getInstanceOf(templateName);
+			}
+			@Implement public StringTemplate makeStInstance(String template) {
+				StringTemplate st = stGroup.createStringTemplate();
+				st.setGroup(stGroup);
+				st.setTemplate(template);
+				return st;
+			}
+			@Implement public void setRefreshInterval(int seconds) {
+				stGroup.setRefreshInterval(seconds);
+			}
+		};
 	}
 	
 	/** Register renderers (by calling {@link StringTemplateGroup#registerRenderer(Class, Object)}
-	 * useful for rendering web pages. This includes renderes for:
+	 * useful for rendering web pages. This includes renderers for:
 	 * 
 	 *   o HtmlString
 	 *   o JsString
