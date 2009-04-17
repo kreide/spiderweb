@@ -63,6 +63,11 @@ public class JsString extends StringBase {
 		return new JsString(n.toString());		
 	}
 	/** @return JsString representation of the given argument */
+	public static JsString forBoolean(Boolean b) {
+		return new JsString(b.toString());
+	}
+	
+	/** @return JsString representation of the given argument */
 	public static JsString forIntArray(Collection<Integer> c) {
 		StringBuilder sb = new StringBuilder("[");
 		String sep = "";
@@ -108,6 +113,7 @@ public class JsString extends StringBase {
 		if (o instanceof Map) return forMap((Map)o, mapSeparator);
 		if (o instanceof Collection) return forArray((Collection)o);
 		if (o instanceof Number) return forNumber((Number)o);
+		if (o instanceof Boolean) return forBoolean((Boolean)o);
 		return forString(String.valueOf(o));
 	}
 	private static String escapeStr(String s) {
